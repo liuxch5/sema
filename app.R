@@ -7,9 +7,16 @@ library(lavaan)
 library(rms)
 library(rsvg)
 library(shinyBS)
+library(data.table)
+library(DT)
+library(heatmaply)
 
-#load("Shiny Workspace.RData")
-#options(shiny.error = T, shiny.trace=F)
+load("Shiny Workspace.RData")
+options(shiny.error = T, shiny.trace=F)
+
+cols.GISTIC <- c("blue", "lightblue", "gray", "pink", "red")
+names(cols.GISTIC) <- c("Deep loss", "Shallow loss", "No change", "Gain", "Amp")
+cols.factor <- c("Gray", "Orange", "Green", "Blue", "Red")
 
 getTable <- function(graph){
   nodes <- sapply(graph$nodes, function(x) x[1])
@@ -169,6 +176,31 @@ downloadGraph <- function(file, what){
   writeLines(what, con = file)
 }
 
+showCorMatrixDialog <- modalDialog(
+  fluidRow(div(id = "corHeatmapDialogDiv", title = "Select dataset for the correlation heatmap",
+      selectInput("selectDatasetHeatmap", label = "Select dataset", choices = as.character(disease.map), selected = "BLCA"))),
+  fluidRow(div(id = "corHeatmapDiv", plotlyOutput("corHeatmap")))
+  , title = "Correlation matrix for the model variables", easyClose = T)
+
+showCorsDialog <- modalDialog({
+  wellPanel(
+    style = "background-color: #FFFFFF;",
+    fluidRow(
+      p("View how your selected variables in the model correlate with all other variables in the selected datasets below"),
+      div(id = "corsDialogDiv1", title = "Select data type to view correlations for",
+          selectInput("corsDialogDataTypeSelect", label = "Select data type", choices = names(dataNames)[-8], selected = "RPPA")),
+      div(id = "corsDialogDiv2", title = "Select dataset to view the correlations for",
+          selectInput("corsDialogDatasetSelect", label = "Select dataset", choices = as.character(disease.map), selected = "BLCA"))
+    ),
+    hr(),
+    h4("Table of genome-wide correlations*"),
+    dataTableOutput("corsTable"),
+    p("*: Table reports Cox t-statistic for correlations with survival, and Pearson's r values for others"),
+    hr(),
+    actionButton("importVars", label = strong("Import selected variables to model"))
+  )}, title = "Global pair-wise correlations of selected variables", easyClose = T)
+  
+
 tableStatsDialog <- bsModal(
   id = "statsModalDialog",
   title = "Fit statistics for evaluated models with SEM",
@@ -176,13 +208,13 @@ tableStatsDialog <- bsModal(
   selectInput(
     "modelSelect",
     label = "Dataset to display the fit statistics for",
-        choices = names(Data),
-        selected = "BLCA",
+        choices = as.character(disease.map),
+        selected = as.character(disease.map)[1],
         width = "180px"
     ),
   wellPanel(
     id = "modelTablePanel",
-    dataTableOutput("modelTable"),
+    shiny::dataTableOutput("modelTable"),
     style = "padding: 0px; background-color: #ffffff; height: 370px;"
   ),
   size = "large"
@@ -244,7 +276,7 @@ graphBox <- box(
                   disabled(selectizeInput("datasetSelect", 
                                           width = "90px",
                                           label = "Dataset",
-                                          choices = c("Average", names(Data)),
+                                          choices = c("Average", as.character(disease.map)),
                                           selected = "Average"
                   ))
               ),
@@ -278,6 +310,12 @@ graphBox <- box(
                     actionButton("showStatsBtn", label = "Stats", class = "greyButton")
                   ),
                   tableStatsDialog
+              ),
+              div(id = "showCorsDialogBtnDiv", title = "View global correlations of selected variables",
+                  actionButton("showCorsDialogBtn", "", icon = icon("globe"), class = "greyButton")
+                  ),
+              div(id = "showCorMatrixDialogBtnDiv", title = "View the covariance matrix of data in the model",
+                  disabled(actionButton("showCorMatrixDialogBtn", "", icon = icon("th-large"), class = "greyButton"))
               )
           )
           
@@ -309,7 +347,7 @@ graphBox <- box(
 addNodesBox <- box(
   width = 30,
   strong("Add nodes to model:", style = "font-size:120%"),
-  div(id = "shapeDiv",
+  fluidRow(div(id = "shapeDiv",
       selectInput(
         inputId = "shape",
         label = "",
@@ -321,14 +359,15 @@ addNodesBox <- box(
           "Somatic mutation (WXS)",
           "Germline variation (WXS)",
           "Copy Number Variation (SNP6)",
+          "Copy Number Variation (GISTIC)",
           "Tumor features (PanCan iAtlas)",
           "Clinical",
           "Factor"
         )
       )
-  ),
-  actionButton("nodeButton", "Add", class = "greyButton"),
-  div(id = "nameDiv",
+  )),
+  fluidRow(
+    div(id = "nameDiv",
       #Use selectizeinput unless shape is not Selected Factor
       conditionalPanel(
         condition = "input.shape != 'Factor'",
@@ -357,24 +396,25 @@ addNodesBox <- box(
           label = NULL
         )
       )
+  ),
+  actionButton("nodeButton", "Add", class = "greyButton")
   )
-  
 )
 
-plotOptionsBox <- box(
-  width = "10px",
+plotOptionsBox <- box(id = "plotOptionsBox",
+  width = "60px",
   selectInput("datasets", label = "Choose datasets to plot", 
-              choices = names(Data), selected = "BRCA", multiple = TRUE, size = length(Data), selectize = F)
+              choices = datasetNames, selected = datasetNames[1], multiple = TRUE, size = length(datasetNames), selectize = F)
   #  downloadButton("downloadPlot", "Download as PDF")
 )
 
 exportDialog <- modalDialog({
   fluidRow(column(
-    width = 5,
+    width = 6,
     radioButtons(
       "exportRadio",
       label = "Options",
-      choices = c("png", "pdf", "svg"),
+      choices = c("png", "pdf", "svg", "raw data"),
       inline = T
     ),
     downloadButton("exportDialogBtn", "export")
@@ -419,6 +459,17 @@ logy2 <- div(id = "logyCheckDiv2",
             )
 )
 
+exportPDFDiv <- div(id = "pdfdiv", title = "Export Plot",
+                    downloadButton("exportPDF", "PDF"),
+                    downloadButton("exportPNG", "PNG")
+                 )
+
+heatmapPanel <- div(
+  id = "heatmapPanelDiv",
+  div(id = "heatmapDatasetSelectDiv",
+      selectInput("heatmapDatasetSelect", label = "Select dataset", choices = as.character(disease.map), selected = "BLCA"))
+)
+
 scatterPanel <- div(id = "scatterPanelDiv",
                 logx,
                 logy2,
@@ -437,7 +488,7 @@ boxPanel <- div(id = "boxPanelDiv",
                 div(id = "showDataPoints",
                     checkboxInput(
                       "showPointsCheck",
-                      label = "Show data points"
+                      label = "Show all data points"
                     )
                 )
               )
@@ -479,7 +530,7 @@ ui <- fluidPage(
                    HTML('<link rel="icon", href="sema icon 5.png", 
                                    type="image/png" />'),
                    HTML('<title>sema-cancer</title>'),
-                   tags$style(includeHTML("Styles.css")),
+                   tags$style(includeHTML("Styles6.css")),
                    tags$style(type="text/css",
                               ".shiny-output-error { visibility: hidden; }",
                               ".shiny-output-error:before { visibility: hidden; }"
@@ -487,12 +538,24 @@ ui <- fluidPage(
                    div(class = "loader", id = "loading"),
                    useShinyjs(),
                    tags$link(rel = "stylesheet", href = "yFiles2/lib/yfiles.css"),
-                   tags$script(
-                     "window.onload = function(){ document.getElementById('loading').style.display = 'none'}"
-                   ),
+                   tags$script(src = "yWorks.yFilesHTML.License.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/lang.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/core-lib.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-core.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-binding.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-input.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-styles-core.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-styles-default.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-styles-other.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-styles-template.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/layout-core.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/algorithms.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/layout-hierarchic.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/layout-radial.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/layout-orthogonal.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/layout-organic.js"),
+                   tags$script(src = "yFiles2/lib/yfiles/impl/graph-layout-bridge.js"),
                    tags$script(src = "yFiles2/ide-support/yfiles-typeinfo.js"),
-                   tags$script(src = "yFiles2/demos/resources/require.js"),
-                   tags$script(src = "Script.js"),
                    tags$script(
                      'Shiny.addCustomMessageHandler("refocus",
                         function(NULL) {
@@ -501,29 +564,36 @@ ui <- fluidPage(
                    )
                  ),
                  fluidPage(
-                   fluidRow(column(width = 1, div(img(src = "sema icon 3.png", width = 150))), column(width = 1, div(id = "cchmc-logo",img(src = "CCHMC-2016-Logo.png", width = 200)))),
+                   fluidRow(column(width = 1, div(img(src = "sema icon 3.png", width = 150))), column(width = 1, div(img(src = "CCHMC-2016-Logo.png", width = 200)))),
                    hr(),
                             div(
                               id = "editPanel",
                               fluidRow(
                                 column(
-                                  width = 7,
+                                  width = 8,
                                   graphBox
                                 ),
                                 column(
-                                  width = 5,
+                                  width = 4,
                                   fluidRow(
-                                    column(width = 5, addNodesBox)
+                                    column(width = 6, addNodesBox)
                                   ),
-                                  hr()
+                                  hr(),
+                                  fluidRow(
+                                    disabled(actionButton("plotButton", "Plot selection", icon = icon("bar-chart-o"))),
+                                    disabled(actionButton("heatmapButton", "Heatmap", icon = icon("th")))),
+                                  fluidRow(
+                                    plotOptionsBox
+                                  )
                                 )
+                                
                               ),
                               fluidRow(
                                 column(
-                                  width = 8,
+                                  width = 10,
                                   column(
-                                    width = 10,
-                                    box(status = "primary",
+                                    width = 9,
+                                    box(
                                         id = "largePlotBox",
                                         width = 12,
                                         wellPanel(
@@ -553,25 +623,28 @@ ui <- fluidPage(
                                           conditionalPanel(
                                             condition = "output.pType == 'Surv'",
                                             survPanel
-                                          ))
+                                          ),
+                                          conditionalPanel(
+                                            condition = "output.pType == 'Heatmap'",
+                                            heatmapPanel
+                                          ),
+                                          hidden(exportPDFDiv))
                                         )),
-                                        plotlyOutput("largePlot"),
-                                        style = "padding-left:0px; padding-right:0px; padding-top: 0px"
+                                        plotlyOutput("largePlot")
                                     )
-                                  ),
-                                  column(
-                                    width = 2,
-                                    plotOptionsBox
-                                  ),
-                                  style = "padding-left:0px; padding-right:0px; padding-top: 0px; 
-                                        border: 2px solid lightgray"
+                                  )
                                 )
                               ),
                               fluidRow(
                                 style = "padding-left:0px; padding-right:10px; padding-top: 110px")
                             )),
-                 
-                 extendShinyjs(script = "shapeFun.js")
+                 tags$script(src = "Script2.js"),
+                 extendShinyjs(script = "shapeFun4.js"),
+                 tags$script(
+                   "window.onload = function(){ 
+                        document.getElementById('loading').style.display = 'none';
+                     }"
+                 )
 )
 
 combineNumericDialog <- modalDialog(
@@ -617,6 +690,7 @@ server <- function(input, output, session) {
   plotType <- reactiveVal(value = NULL);
   modelCount <- reactiveVal(value = 0)
   svg_img <- reactiveVal()
+  currentPlot <- reactiveVal()
   
   survSlider1 <- reactive(input$cutoffSurv) %>% debounce(1000)
   survSlider2 <- reactive(input$cutoffSurv2) %>% debounce(1000)
@@ -634,6 +708,19 @@ server <- function(input, output, session) {
   #initialize modelsList
   modelsList <- reactiveValues();
   
+  getNumericData <- function(dtype){
+    require(plyr)
+    
+    m <- tempData$DF[tempData$DF$Type == dtype,4:ncol(tempData$DF)]
+    types <- sapply(colnames(m), function(x) strsplit(x, split = ".", fixed = T)[[1]][2])
+    m <- m[, !(types %in% c("Clin", "Surv"))]
+    m <- apply(m, 2, function(x) 
+      as.numeric(mapvalues(x, c("ALT", "REF", "WT", "Mut", "Deep loss", "Shallow loss", "No change", "Gain", "Amp"), 
+                           c(2, 0, 0, 2, -3, -1.5, 0, 1.5, 3))))
+    rownames(m) <- rownames(tempData$DF[tempData$DF$Type == dtype,])
+    return(m)
+  }
+  
   #After shape is selected the dataset is assigned to be used in selectizeInput
   
   output$combineCategoricalTable <- renderUI({
@@ -642,6 +729,24 @@ server <- function(input, output, session) {
     lapply(selection, function(x)
       selectInput(x, label = paste(x, "should be:"), choices = levels(tempData$DF[[x]])))
   })
+  
+  output$exportPDF <- downloadHandler(filename = function() {
+    paste("myPlot", Sys.time(), "pdf", sep = ".")}, content = function(file) {
+      pp <- isolate(currentPlot())
+      export(pp, file = file, cliprect = "viewport")
+  })
+  
+  output$exportSVG <- downloadHandler(filename = function() {
+    paste("myPlot", Sys.time(), "svg", sep = ".")}, content = function(file) {
+      pp <- isolate(currentPlot())
+      export(pp, file = file)
+    })
+  
+  output$exportPNG <- downloadHandler(filename = function() {
+    paste("myPlot", Sys.time(), "png", sep = ".")}, content = function(file) {
+      pp <- isolate(currentPlot())
+      export(pp, file = file)
+    })
   
   observeEvent(input$combineFactorBtn, {
     name <- gsub(".", "", input$combineFactorText, fixed = T)
@@ -674,9 +779,32 @@ server <- function(input, output, session) {
                label = name,
                index = 0)
     removeModal()
+    js$layout(layoutType())
   })
   
-  output$modelTable <- renderDataTable({
+  observeEvent(input$showCorsDialogBtn, {
+    showModal(showCorsDialog)
+  })
+  
+  observeEvent(input$showCorMatrixDialogBtn, {
+    showModal(showCorMatrixDialog)
+  })
+  
+  heatmapDataset <- reactive(input$selectDatasetHeatmap)
+  
+  output$corHeatmap <- renderPlotly({
+    require(plyr)
+    m <- getNumericData(heatmapDataset())
+    
+    m <- cor(m, use = "pairwise.complete.obs")
+    m[is.na(m)] <- 0
+    m[m < -0.75] <- -0.75
+    m[m > 0.75] <- 0.75
+    heatmaply(m, colors = c("blue", "white", "red"), limits = c(-0.75, 0.75)) %>%
+      config(displayModeBar = F)
+  })
+  
+  output$modelTable <- shiny::renderDataTable({
     if(modelCount() == 0) return(NULL)
     tbl <- sapply(1:modelCount(), function(x) {
       nam <- paste("Model", x)
@@ -693,7 +821,6 @@ server <- function(input, output, session) {
     ordering = T,
     paging = F,
     processing = T,
-    # scrollX = "400px",
     scrollY = "340px",
     scrollCollapse = T,
     info = F,
@@ -702,17 +829,97 @@ server <- function(input, output, session) {
   )
   )
   
+  observeEvent(input$importVars,{
+    rows <- input$corsTable_rows_selected
+    type <- input$corsDialogDataTypeSelect
+    names <- dataNames[[type]][rows]
+    switch(type,
+           "RNA" = shape <- "mRNA (RNAseq)",
+           "RPPA" = shape <- "Protein (RPPA)",
+           "CNV" = shape <- "Copy Number Variation (GISTIC)",
+           "Mut" = shape <- "Somatic mutation (WXS)",
+           "Germ" = shape <- "Germline variation (WXS)",
+           "miRNA" = shape <- "miRNA (miRNA-seq)",
+           "iAtlas" = shape <- "Tumor features (PanCan iAtlas)"
+    )
+    for(i in names) {
+      addNode(shape = shape, name = i)
+      js$addNode(type = shape, label = i, index = 0)
+    }
+    removeModal()
+    js$layout(layoutType())
+  })
+  
+  output$corsTable <- DT::renderDataTable({
+    selection <- NA
+    s <- input$multiSelection
+    if(!is.null(s)) selection <- strsplit(s, split = ",")[[1]]
+    if(length(selection) == 0) selection <- input$clicked
+    
+    dataset <- input$corsDialogDatasetSelect
+    datatype <- input$corsDialogDataTypeSelect
+    
+    dd <- data.frame(Names = dataNames[[datatype]])
+    tt <- paste0("Ave.in.", dataset)
+    dd[[tt]] <- round(Means[[datatype]][dataNames[[datatype]], dataset], digits = 3)
+    
+    if(!is.na(selection)){
+      for(i in selection){
+        s <- strsplit(i, split = ".", fixed = T)[[1]]
+        name <- s[1]
+        type <- s[2]
+        
+        if(type == "GISTIC") type <- "CNV"
+        
+        p <- chmatch(name, dataNames[[type]])
+        
+        n <- paste0("f", (p-1)%/%1000)
+        
+        file <- paste0(type, "_to_", datatype)
+        p <- (p-1) %% 1000 + 1
+        
+        if(type == "Surv") {
+          file <- paste0(datatype, "_to_", type)
+          f <- paste("Data/Correlations", dataset, file, sep = "/")
+          if(file.exists(f)) dd[[i]] <- round(as.matrix(fread(f, nrows = 1, sep = ",", data.table = F, header = F))[1,],
+                                              digits = 3)
+        }
+        else {
+          f <- paste("Data/Correlations", dataset, file, n, sep = "/")
+          if(file.exists(f)) dd[[i]] <- round(as.matrix(fread(f, nrows = 1, sep = ",", skip = p, data.table = F, header = F))[1,],
+                                              digits = 3)
+        }
+      }
+    }
+    
+    dd <- datatable(dd, rownames = F, filter = "bottom", extensions = "Buttons",
+                    options = list(
+                      dom = "Bltrp", 
+                      pagingType = "simple",
+                      pageLength = 25,
+                      processing = T,
+                      scrollX = T,
+                      scrollY = "250px",
+                      buttons = list("csv"),
+                      lengthMenu = list(c(25, 50, 100, -1), list("25", "50", "100", "All"))
+                    ))
+      
+    
+    return(dd)
+  })
+  
   output$exportDialogBtn <- downloadHandler(
     # This function returns a string which tells the client
     # browser what name to use when saving the file.
     filename = function() {
-      paste("myGraph", Sys.time(),
+      paste("myModel", Sys.time(),
             
             switch(
               input$exportRadio,
               "png" = "png",
               "pdf" = "pdf",
-              "svg" = "svg"
+              "svg" = "svg",
+              "raw data" = "csv"
             ),
             sep = ".")
     },
@@ -724,7 +931,12 @@ server <- function(input, output, session) {
         input$exportRadio,
         "png" = rsvg_png(charToRaw(svg_img()), file),
         "pdf" = rsvg_pdf(charToRaw(svg_img()), file),
-        "svg" = writeLines(svg_img(), file)
+        "svg" = writeLines(svg_img(), file),
+        "raw data" = {
+          types <- sapply(colnames(tempData$DF)[4:ncol(tempData$DF)], function(x) strsplit(x, split = ".", fixed = T)[[1]][2])
+          df <- tempData$DF[, c(1:3, (4:ncol(tempData$DF))[!(types %in% c("Germ", "Surv"))])]
+          fwrite(df, file = file, row.names = T)
+        }
       )
       
     },
@@ -760,12 +972,14 @@ server <- function(input, output, session) {
                label = varname,
                index = 0)
     removeModal()
+    js$layout(layoutType())
   })
   
   observeEvent(input$exportBtn, {
     showModal(exportDialog)
   })
   
+ 
   observeEvent(input$datasetSelect, {
     chosenDataset(input$datasetSelect)
     
@@ -793,14 +1007,15 @@ server <- function(input, output, session) {
     
     switch(
       input$shape,
-      "mRNA (RNAseq)" = my_data <- row.names(Data[["BLCA"]][["RNA"]]),
-      "Protein (RPPA)" = my_data <- row.names(Data[["BLCA"]][["RPPA"]]),
-      "Copy Number Variation (SNP6)" = my_data <- row.names(Data[["BLCA"]][["CNV"]]),
-      "Somatic mutation (WXS)" = my_data <- row.names(Data[["BLCA"]][["Mut"]]),
-      "Germline variation (WXS)" = my_data <- row.names(Data[["BLCA"]][["Germ"]]),
-      "miRNA (miRNA-seq)" = my_data <- row.names(Data[["BLCA"]][["miRNA"]]),
+      "mRNA (RNAseq)" = my_data <- dataNames[["RNA"]],
+      "Protein (RPPA)" = my_data <- dataNames[["RPPA"]],
+      "Copy Number Variation (SNP6)" = my_data <- dataNames[["CNV"]],
+      "Copy Number Variation (GISTIC)" = my_data <- dataNames[["GISTIC"]],
+      "Somatic mutation (WXS)" = my_data <- dataNames[["Mut"]],
+      "Germline variation (WXS)" = my_data <- dataNames[["Germ"]],
+      "miRNA (miRNA-seq)" = my_data <- dataNames[["miRNA"]],
       "Tumor features (PanCan iAtlas)" = {
-        my_data <- rownames(Data[["BLCA"]][["iAtlas"]])
+        my_data <- dataNames[["iAtlas"]]
         updateSelectizeInput(session = session, "dynamic", choices = my_data, 
                              server = T, options = list(openOnFocus = TRUE,selectOnTab = FALSE,
                                                         maxOptions = 30,
@@ -950,23 +1165,23 @@ server <- function(input, output, session) {
     js$focus()
   })
   
-  
-  addNode <- function(shape, name){
+  addNode <- function(shape, name, type){
     if(name == "Overall_Survival") return(NULL);
-    type <- NA
-    switch(
-      shape,
-      "mRNA (RNAseq)" = type <- "RNA",
-      "Log-mRNA (RNAseq)" = type <- "LogRNA",
-      "Protein (RPPA)" = type <- "RPPA",
-      "Copy Number Variation (SNP6)" = type <- "CNV",
-      "Somatic mutation (WXS)" = type <- "Mut",
-      "Germline variation (WXS)" = type <- "Germ",
-      "miRNA (miRNA-seq)" = type <- "miRNA",
-      "Tumor features (PanCan iAtlas)" = type <- "iAtlas",
-      "Clinical" = type <- "Clin",
-      "Factor" = type <- "Factor"
-    )
+    if(missing(type)){
+      switch(
+        shape,
+        "mRNA (RNAseq)" = type <- "RNA",
+        "Protein (RPPA)" = type <- "RPPA",
+        "Copy Number Variation (SNP6)" = type <- "CNV",
+        "Copy Number Variation (GISTIC)" = type <- "GISTIC",
+        "Somatic mutation (WXS)" = type <- "Mut",
+        "Germline variation (WXS)" = type <- "Germ",
+        "miRNA (miRNA-seq)" = type <- "miRNA",
+        "Tumor features (PanCan iAtlas)" = type <- "iAtlas",
+        "Clinical" = type <- "Clin",
+        "Factor" = type <- "Factor"
+      )
+    }
     
     node.name <- paste(name, type, sep = ".")
     
@@ -975,24 +1190,42 @@ server <- function(input, output, session) {
     }
     
     if(type == "Clin"){
-      p <- sapply(Data, function(x) rownames(x$Clin))
-      p <- unlist(p)
-      dd <- sapply(Data, function(x) x$Clin[,name])
-      dd <- unlist(dd)
-      names(dd) <- p
+      dd <- Clinical[,name]
+      names(dd) <- rownames(Clinical)
     } else {
-      p <- sapply(Data, function(x) colnames(x[[type]]))
-      p <- unlist(p)
-      dd <- sapply(Data, function(x) x[[type]][name,])
-      dd <- unlist(dd)
-      names(dd) <- p
+      p <- chmatch(name, dataNames[[type]])
+      if(type == "miRNA"){
+        n <- "f0"
+      } else {
+        n <- paste0("f", (p-1)%/%1000)
+      }
+      f <- paste("Data/TCGA", type, n, sep = "/")
+      p <- (p-1) %% 1000 + 1
+      dd <- fread(f, nrows = 1, sep = ",", skip = p, data.table = F, header = F)
+      dd <- as.matrix(dd)[1,]
+      names(dd) <- sampleNames[[type]]
+      
+      if(type %in% names(sampleNames.TARGET)){
+        f <- paste("Data/TARGET", type, n, sep = "/")
+        p <- (p-1) %% 1000 + 1
+        dd2 <- fread(f, nrows = 1, sep = ",", skip = p, data.table = F, header = F)
+        dd2 <- as.matrix(dd2)[1,]
+        names(dd2) <- sampleNames.TARGET[[type]]
+        dd <- c(dd, dd2)
+      }
     }
     
     if(type == "Mut") dd <- factor(dd, labels = c("WT", "Mut"))
     if(type == "Germ") dd <- factor(dd, labels = c("REF", "ALT"))
+    if(type == "GISTIC") dd <- factor(dd, levels = 
+                                        intersect(c("Deep loss", "Shallow loss", "No change", "Gain", "Amp"),
+                                                  unique(dd)))
     
     tempData$DF[[node.name]] <- dd[rownames(tempData$DF)]
-    tempDF <<- tempData$DF
+    if(ncol(tempData$DF) > 4) {
+      enable("showCorMatrixDialogBtn")
+      enable("heatmapButton")
+    }
   }
   
   observeEvent(input$binarizeBtn, {
@@ -1006,6 +1239,8 @@ server <- function(input, output, session) {
       return(NULL);
     }
     
+    selection <- intersect(selection, colnames(tempData$DF))
+    if(length(selection) < 2) return(NULL)
     types <- unlist(sapply(tempData$DF[selection], function(x) class(x)))
     if(!all(types == types[1])){
       showNotification("Variables to be combined must be all either numeric or categorical")
@@ -1058,16 +1293,87 @@ server <- function(input, output, session) {
 
   observeEvent(input$multiSelection, {
     selection <- strsplit(input$multiSelection, split = ",")[[1]]
-    if(length(selection) > 1) enable("combineBtn") else disable("combineBtn");
+    if(length(selection) > 1) {
+      enable("combineBtn")
+      enable("showCorsDialogBtn")
+    }else {
+      disable("combineBtn");
+    }
+  })
+  
+  observeEvent(input$heatmapButton, {
+    show("pdfdiv")
+    output$largePlot <- renderPlotly({
+      plotType("Heatmap")
+      dtype <- input$heatmapDatasetSelect
+      m <- isolate(getNumericData(dtype))
+      m <- m[, !apply(m, 2, function(x) all(is.na(x)))]
+      m <- na.omit(m)
+      cc <- isolate(sapply(tempData$DF[,colnames(m)], is.numeric))
+      types <- sapply(colnames(m), function(x) strsplit(x, split = ".", fixed = T)[[1]][2])
+      cc <- colnames(m)[cc & !(types %in% c("RPPA", "CNV"))]
+      if(length(cc) > 0) m2 <- apply(m[,cc, drop = F], 2, function(x) log2((x+1)/mean(x+1, na.rm = T)))
+      if("CNV" %in% types) {
+        cnv <- m[, types == "CNV", drop = F]
+        m[,types == "CNV"] <- cnv
+      }
+      if("RPPA" %in% types) {
+        rppa <- m[, types == "RPPA", drop = F]
+        rppa <- scale(rppa)
+        m[,types == "RPPA"] <- rppa
+      }
+      if(length(cc) == 1) m[,cc] <- m2
+      if(length(cc) > 1) m[,cc] <- m2[,cc]
+      m[m > 3] <- 3
+      m[m < -3] <- -3
+      p <- heatmaply(t(m), colors = c("blue", "white", "red"),
+                     plot_method = "plotly", limits = c(-3,3)) %>% config(displayModeBar = F)
+      currentPlot(p)
+      return(p)
+    })
+  })
+  
+  observeEvent(input$nodeDeleted, {
+    selection <- strsplit(input$multiSelection, split = ",")[[1]]
+    if(length(selection) == 0) selection <- input$clicked
+    for(node in selection){
+      if(node %in% colnames(tempData$DF)) tempData$DF[[node]] <- NULL
+    }
+    if(ncol(tempData$DF) < 5) {
+      disable("showCorMatrixDialogBtn")
+      disable("heatmapButton")
+    }
   })
   
   observeEvent(input$clicked, {
+    enable("plotButton")
     boo <- grepl(pattern = ' : ', input$clicked)
+    if(boo){
+      disable("binarizeBtn")
+      disable("showCorsDialogBtn")
+    } else {
+      enable("showCorsDialogBtn")
+      temp <- unlist(strsplit(input$clicked, "\\."))
+      if(temp[2] == "Surv"){
+        disable("binarizeBtn")
+      } else {
+        if(class(tempData$DF[[input$clicked]]) != "factor"){
+          enable("binarizeBtn")
+        } else {
+          disable("binarizeBtn")
+        }
+      }
+    }
+  })
+  
+  observeEvent(input$plotButton, {
+    clickedNode <- isolate(input$clicked)
+    boo <- isolate(grepl(pattern = ' : ', clickedNode))
+    show("pdfdiv")
     index <- NA
     # if boo is true the item is an edge, otherwise it's a node
     if (boo) {
-      disable("binarizeBtn")
-      temp1 <- unlist(strsplit(input$clicked, " : "))
+      temp1 <- unlist(strsplit(clickedNode, " : "))
       source <- temp1[1]
       target <- temp1[2]
       sourcePart <- unlist(strsplit(source, "\\."))
@@ -1080,6 +1386,7 @@ server <- function(input, output, session) {
       }
       
       output$largePlot <- renderPlotly({
+        sel.datasets <- disease.map[input$datasets]
         
         if(input$edgePlot != "Raw data" & !is.na(index)){
           
@@ -1087,8 +1394,10 @@ server <- function(input, output, session) {
           if(input$edgePlot == "Z-scores") dat <- res$zmat[index,]
           if(input$edgePlot == "P-values (-log10)") dat <- -log10(res$pmat[index,])
           plotType("Bar")
-          return(plot_ly(type = "bar", x = input$datasets, y = dat[input$datasets]) %>% 
-                   layout(title = input$edgePlot, yaxis = list(title = paste(source, "->", target, sep = ""))))
+          p <- plot_ly(type = "bar", x = sel.datasets, y = dat[sel.datasets]) %>% 
+            layout(title = input$edgePlot, yaxis = list(title = paste(source, "->", target, sep = ""))) %>% config(displayModeBar = F)
+          currentPlot(p)
+          return(p)
         }
         
         #        if(class(tempData[["BRCA"]][[sourcePart[2]]][,sourcePart[1]]) == "factor"){
@@ -1096,21 +1405,23 @@ server <- function(input, output, session) {
         #        }
         
         if (targetPart[2] != "Surv"){
-          df <- data.frame(x = tempData$DF[tempData$DF$Type %in% input$datasets, source], 
-            y = tempData$DF[tempData$DF$Type %in% input$datasets, target], 
-            z = tempData$DF[tempData$DF$Type %in% input$datasets, "Type"])
+          df <- data.frame(x = tempData$DF[tempData$DF$Type %in% sel.datasets, source], 
+            y = tempData$DF[tempData$DF$Type %in% sel.datasets, target], 
+            z = tempData$DF[tempData$DF$Type %in% sel.datasets, "Type"])
         } else {
-          df <- data.frame(OS_time = tempData$DF[tempData$DF$Type %in% input$datasets, "OS_time"],
-                           OS = tempData$DF[tempData$DF$Type %in% input$datasets, "OS"],
-                           x = tempData$DF[tempData$DF$Type %in% input$datasets, source], 
-                           z = tempData$DF[tempData$DF$Type %in% input$datasets, "Type"])
+          df <- data.frame(OS_time = tempData$DF[tempData$DF$Type %in% sel.datasets, "OS_time"],
+                           OS = tempData$DF[tempData$DF$Type %in% sel.datasets, "OS"],
+                           x = tempData$DF[tempData$DF$Type %in% sel.datasets, source], 
+                           z = tempData$DF[tempData$DF$Type %in% sel.datasets, "Type"])
           df <- na.omit(df)
         }
         
+        df$z <- factor(df$z)
+        
         if(class(df$x) == "factor" && class(df$y) == "factor"){
           plotType("Factor")
-          cc <- count(df, x, y)
-          cc2 <- left_join(cc, count(cc, x, wt = n))
+          cc <- dplyr::count(df, x, y)
+          cc2 <- left_join(cc, dplyr::count(cc, x, wt = n))
           cc2 <- mutate(cc2, prop = n/nn)
           if(input$factorType == "Total numbers"){
             cc2 <- mutate(cc2, res = n)
@@ -1120,25 +1431,34 @@ server <- function(input, output, session) {
             tit <- "Proportion of"
           }
           
-          p <- cc2  %>% mutate(prop = n/nn) %>% plot_ly(x = ~ x, y = ~res, color = ~y, colors = c("Gray", "Orange", "Green", "Blue", "Red")) %>% 
+          if(targetPart[2] == "GISTIC") cols <- cols.GISTIC else cols <- cols.factor
+          
+          p <- cc2  %>% mutate(prop = n/nn) %>% plot_ly(x = ~ x, y = ~res, color = ~y, colors = cols) %>% 
             add_bars() %>% layout(barmode = "stack", xaxis = list(title = source), 
-                                  yaxis = list(title = paste(tit, target)))
+                                  yaxis = list(title = paste(tit, target))) %>% config(displayModeBar = F)
+          currentPlot(p)
           return(p)
         } else if ((class(df$x) == "factor" | class(df$y) == "factor") & targetPart[2] != "Surv") {
           plotType("Box")
-          bx <- ifelse(input$showPointsCheck, "all", F)
+          bx <- ifelse(input$showPointsCheck, "all", "none")
           opts <- ifelse(input$yaxislog, "log", "linear")
+          if(sourcePart[2] == "GISTIC" | targetPart[2] == "GISTIC")
+            cols <- cols.GISTIC else cols <- cols.factor
           if(class(df$y) == "factor"){
-            p <- plot_ly(df, x = ~z, y = ~x, color = ~y, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0, colors = c("Gray", "Orange", "Green", "Blue", "Red")) %>%
-                layout(boxmode = "group", xaxis = list(title = target), yaxis = list(title = source, type = opts))
+            p <- plot_ly(df, x = ~z, y = ~x, color = ~y, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0, colors = cols) %>%
+                layout(boxmode = "group", xaxis = list(title = target), yaxis = list(title = source, type = opts)) %>% 
+                config(displayModeBar = F)
+            currentPlot(p)
             return(p)
           } else {
-            p <- plot_ly(df, x = ~z, y = ~y, color = ~x, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0) %>%
-                layout(boxmode = "group", xaxis = list(title = source), yaxis = list(title = target, type = opts), colors = c("Gray", "Orange", "Green", "Blue", "Red")) 
+            p <- plot_ly(df, x = ~z, y = ~y, color = ~x, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0, colors = cols) %>%
+                layout(boxmode = "group", xaxis = list(title = source), yaxis = list(title = target, type = opts)) %>% config(displayModeBar = F)
+            currentPlot(p)
             return(p)
           }
         } else if (targetPart[2] == "Surv"){
           plotType("Surv")
+          if(sourcePart[2] == "GISTIC") cols <- cols.GISTIC[levels(df$x)] else cols <- cols.factor
           if(class(df$x) != "factor"){
             enable("SurvOptions")
             x <- as.numeric(df$x)
@@ -1157,7 +1477,8 @@ server <- function(input, output, session) {
           } else disable("SurvOptions")
           
           fit <- npsurv(Surv(OS_time, OS) ~ x, data = df)
-          p <- survplotp(fit)
+          p <- survplotp(fit, col = cols) %>% config(displayModeBar = F)
+          currentPlot(p)
           return(p)
         } else {
           plotType("Scatter")
@@ -1165,7 +1486,7 @@ server <- function(input, output, session) {
           yopts <- ifelse(input$yaxislog2, "log", "linear")
           if(input$chartType == "Scatter"){
             p <- plot_ly(df, x = ~x, y = ~y, color = ~z, type = "scatter") %>% 
-              layout(xaxis = list(title = source, type = xopts), yaxis = list(title = target, type = yopts)) 
+              layout(xaxis = list(title = source, type = xopts), yaxis = list(title = target, type = yopts)) %>% config(displayModeBar = F)
           } else {
             xbins <- cut(df$x, breaks = 50)
             ybins <- cut(df$y, breaks = 50)
@@ -1174,8 +1495,9 @@ server <- function(input, output, session) {
             zmax <- mean(counts) + 2*sd(counts)
             p <- plot_ly(df, x = ~x, y = ~y, z = ~counts) %>% 
               add_histogram2d(zmin = zmin, zmax = zmax) %>%
-              layout(xaxis = list(title = source, type = xopts), yaxis = list(title = target, type = yopts)) 
+              layout(xaxis = list(title = source, type = xopts), yaxis = list(title = target, type = yopts)) %>% config(displayModeBar = F)
           }
+          currentPlot(p)
           return(p)
         }
       })
@@ -1185,28 +1507,28 @@ server <- function(input, output, session) {
     else{
       hide("edgePlot")
       output$largePlot <- renderPlotly({
-        temp2 <- unlist(strsplit(input$clicked, "\\."))
-        nd <- input$clicked
+        sel.datasets <- disease.map[input$datasets]
+        temp2 <- unlist(strsplit(clickedNode, "\\."))
+        nd <- clickedNode
         
         if(temp2[2] == "Surv"){
           plotType("Surv")
-          disable("binarizeBtn")
           disable("SurvOptions")
-          fit <- npsurv(Surv(OS_time,OS) ~ Type, data = tempData$DF[tempData$DF$Type %in% input$datasets,])
-          p <- survplotp(fit)
+          fit <- npsurv(Surv(OS_time,OS) ~ Type, data = tempData$DF[tempData$DF$Type %in% sel.datasets,])
+          p <- survplotp(fit) %>% config(displayModeBar = F)
+          currentPlot(p)
           return(p)
         } else {
-          df <- data.frame(x = tempData$DF[tempData$DF$Type %in% input$datasets, nd], 
-                           z = tempData$DF[tempData$DF$Type %in% input$datasets, "Type"])
+          df <- data.frame(x = tempData$DF[tempData$DF$Type %in% sel.datasets, nd], 
+                           z = tempData$DF[tempData$DF$Type %in% sel.datasets, "Type"])
+          df$z <- factor(df$z)
           if (class(df$x) == "factor") {
-            disable("binarizeBtn")
-            
             plotType("Factor")
             
-            cc <- count(df, z, x)
+            cc <- dplyr::count(df, z, x)
             cc <- na.omit(cc)
-            cc2 <- left_join(cc, count(cc, z, wt = n))
-            cc2 <- mutate(cc2, prop = n/nn)
+            cc2 <- left_join(cc, dplyr::count(cc, z, wt = n))
+            cc2 <- dplyr::mutate(cc2, prop = n/nn)
             
             if(input$factorType == "Total numbers"){
               tit = "Number of samples"
@@ -1216,17 +1538,21 @@ server <- function(input, output, session) {
               cc2$res <- cc2$prop
             }
             
-            p <- plot_ly(cc2, x = ~z, y = ~res, name = ~x, color = ~x, colors = c("Gray", "Orange", "Green", "Blue", "Red")) %>% add_bars() %>%
-              layout(yaxis = list(title = tit), barmode = "stack") 
+            if(temp2[2] == "GISTIC") {
+              cols <- cols.GISTIC[levels(df$x)]
+            } else cols <- c("Gray", "Orange", "Green", "Blue", "Red")
+            p <- plot_ly(cc2, x = ~z, y = ~res, name = ~x, color = ~x, colors = cols) %>% add_bars() %>%
+              layout(yaxis = list(title = tit), barmode = "stack") %>% config(displayModeBar = F)
+            currentPlot(p)
             return(p)
           }else {
-            enable("binarizeBtn")
             plotType("Box")
-            bx <- ifelse(input$showPointsCheck, "all", F)
+            bx <- ifelse(input$showPointsCheck, "all", "none")
             opts <- ifelse(input$yaxislog, "log", "linear")
             selectedNode(input$clicked)
-            p <- plot_ly(df, y = ~x, color =~ z, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0)
-            p <- layout(p, yaxis = list(title = title, type = opts)) 
+            p <- plot_ly(df, y = ~x, color =~ z, type = "box", boxpoints = bx, jitter = 0.3, pointpos = 0) %>%
+                 layout(yaxis = list(title = nd, type = opts)) %>% config(displayModeBar = F)
+            currentPlot(p)
             return(p)
           }
         }
@@ -1235,7 +1561,7 @@ server <- function(input, output, session) {
   })
   
   tab <- eventReactive(input$graph, {
-    graph <<- input$graph
+    graph <- input$graph
     mat <- getTable(graph)
     
     mat <- t(mat)
@@ -1292,7 +1618,7 @@ server <- function(input, output, session) {
     toggle("loading2")
     
     tryCatch({
-      names(parameters) <- names(Data)
+      names(parameters) <- disease.map
       
       z.mat <- sapply(parameters, function(x) 
         if(!is.na(x)) {
@@ -1388,8 +1714,8 @@ server <- function(input, output, session) {
     if(is.null(p)) return(NULL);
 
     isolate({
-      updateSelectInput(session, "edgeLabel", selected = "z")
-      updateSelectInput(session, "datasetSelect", selected = "Average")
+##      updateSelectInput(session, "edgeLabel", selected = "z")
+##      updateSelectInput(session, "datasetSelect", selected = "Average")
       updateSelectInput(session, "modelSelectMenu", choices = names(modelsList), 
                         selected = paste("Model", modelCount()))
     })
