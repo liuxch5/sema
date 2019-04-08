@@ -58,6 +58,8 @@
 }
 
 
+
+
 /*#factor{*/
 /*width: 100%;*/
 /*float: right;*/
@@ -137,6 +139,10 @@
     float:left;
 }
 
+#heatmapPanelDiv{
+    float:left;
+}
+
 #proportions{
     float:left;
 }
@@ -165,6 +171,10 @@
     float:left;
     margin-right: 50px;
     font-weight: bolder;
+}
+
+#pdfdiv{
+    float: right;
 }
 
 div.checkbox {
@@ -270,6 +280,17 @@ div.checkbox {
     margin-top: 20px;
 }
 
+#corsDialogDiv1{
+    display: inline;
+    float: left;
+}
+
+#corsDialogDiv2{
+    display: inline;
+    float: left;
+    margin-left: 20px;
+}
+
 #submitButtonDiv {
     display: inline;
     float: right;
@@ -286,11 +307,68 @@ div.checkbox {
     /*margin-right: 0px;*/
 }
 
+#showCorMatrixDialogBtnDiv {
+    float: inherit;
+    margin-top: 20px;    
+    /*clear: left;*/
+    /*margin-right: 0px;*/
+}
+
+#corHeatmapDialogDiv {
+    float: left;
+    display: inline;
+    /*clear: left;*/
+    /*margin-right: 0px;*/
+}
+
+#heatmapScaleSelectDiv {
+    float: left;
+    display: inline;
+    /*clear: left;*/
+    /*margin-right: 0px;*/
+}
+
+#heatmapRangeDiv {
+    float: left;
+    display: inline;
+    /*clear: left;*/
+    /*margin-right: 0px;*/
+}
+
+#showCorsDialogBtnDiv{
+    float: inherit;
+    margin-top: 20px;    
+}
+
+#corsTable table td {
+    line-height:50%;
+    text-align: center;
+}
+
+#corsTable table th {
+    text-align: center;
+}
+
 #showStatsButtonDiv {
     float: inherit;
     margin-top: 20px;    
     /*clear: left;*/
     /*margin-right: 0px;*/
+}
+
+#datasets {
+  max-height: 360px;
+  overflow-y: auto;
+  margin-left: 0px;
+}
+
+#largePlotBox {
+   max-height: 500px;
+}
+
+#plotOptionsBox{
+    margin-left: 0px;
+    margin-top: 20px;
 }
 
 #submit{
@@ -301,6 +379,26 @@ div.checkbox {
     border: 1px solid green;
     /*display:table-cell;*/
     /*float: left;*/
+}
+
+#plotButton{
+    background-color: blue;
+    margin-top: 0px;
+    margin-left: 0px;
+    color: white;
+    font-size: 15px;
+    font-weight: bolder;    
+    border: 1px solid lightblue;
+}
+
+#heatmapButton{
+    background-color: orange;
+    margin-top: 0px;
+    margin-left: 0px;
+    color: white;
+    font-size: 15px;
+    font-weight: bolder;    
+    border: 1px solid lightblue;
 }
 
 label{
@@ -323,6 +421,15 @@ label{
     background-color: #ffffff;
     color: #8c5100;
     font-weight: bolder;
+}
+
+.greyButton1{
+    background-color: #ffffff;
+    color: #8c5100;
+    font-weight: bolder;
+    font-size: 13px;
+    padding-bottom: 2px;
+    padding-top: 2px;
 }
 
 .loader {
@@ -378,9 +485,11 @@ label{
 }
 
 body{
-    width: auto;
-    margin:auto;
 
+    position: relative;   
+    margin:0 auto !important;
+    width: auto;    
+    
     /*width: 400px;*/
     /*max-width: 600px;*/
     /*min-width: 300px;*/
@@ -448,9 +557,3 @@ body{
 #modelTable{
     text-align: center;
 }
-
-
-#cchmc-logo{
-    padding-left: 50px;
-}
-

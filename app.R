@@ -530,7 +530,7 @@ ui <- fluidPage(
                    HTML('<link rel="icon", href="sema icon 5.png", 
                                    type="image/png" />'),
                    HTML('<title>sema-cancer</title>'),
-                   tags$style(includeHTML("Styles6.css")),
+                   tags$style(includeHTML("Styles.css")),
                    tags$style(type="text/css",
                               ".shiny-output-error { visibility: hidden; }",
                               ".shiny-output-error:before { visibility: hidden; }"
@@ -638,8 +638,8 @@ ui <- fluidPage(
                               fluidRow(
                                 style = "padding-left:0px; padding-right:10px; padding-top: 110px")
                             )),
-                 tags$script(src = "Script2.js"),
-                 extendShinyjs(script = "shapeFun4.js"),
+                 tags$script(src = "Script.js"),
+                 extendShinyjs(script = "shapeFun.js"),
                  tags$script(
                    "window.onload = function(){ 
                         document.getElementById('loading').style.display = 'none';

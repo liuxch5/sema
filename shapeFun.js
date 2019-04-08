@@ -172,8 +172,6 @@ shinyjs.results = function (params) {
     graphControl.updateVisual();    
 };
 
-
-
 var flag1 = true, flag2 = false;
 
 shinyjs.addNode = function (params) {
@@ -214,6 +212,10 @@ shinyjs.addNode = function (params) {
     if (pr.type === "Copy Number Variation (SNP6)") {
         sns.shape = yfiles.styles.ShapeNodeShape.HEXAGON;
         pr.label = pr.label + ".CNV";
+    }
+    if (pr.type === "Copy Number Variation (GISTIC)") {
+        sns.shape = yfiles.styles.ShapeNodeShape.HEXAGON;
+        pr.label = pr.label + ".GISTIC";
     }
     if (pr.type === "Somatic mutation (WXS)") {
         sns.shape = yfiles.styles.ShapeNodeShape.TRAPEZ2;
